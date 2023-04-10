@@ -5,7 +5,7 @@ from flask_debugtoolbar import DebugToolbarExtension
 from sqlalchemy.exc import IntegrityError
 
 from forms import UserAddForm, LoginForm, MessageForm, UserEditForm
-from models import db, connect_db, User, Message
+from models import db, connect_db, User, Message, Likes
 
 CURR_USER_KEY = "curr_user"
 
@@ -18,7 +18,7 @@ app.config['SQLALCHEMY_DATABASE_URI'] = (
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SQLALCHEMY_ECHO'] = False
-app.config['DEBUG_TB_INTERCEPT_REDIRECTS'] = True
+app.config['DEBUG_TB_INTERCEPT_REDIRECTS'] = False
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', "it's a secret")
 toolbar = DebugToolbarExtension(app)
 
@@ -140,6 +140,43 @@ def list_users():
     return render_template('users/index.html', users=users)
 
 
+@app.route('/users/add_like/<int:msg_id>', methods=['POST'])
+def add_like(msg_id):
+    """add like to users likes"""
+
+    like = Likes.query.filter(Likes.user_id==g.user.id, Likes.message_id==msg_id).first()
+
+    if like:
+        db.session.delete(like)
+        db.session.commit()
+    else:
+        like = Likes(user_id= g.user.id, message_id=msg_id) 
+        db.session.add(like)
+        db.session.commit()
+
+    return redirect('/')
+
+@app.route('/users/<int:user_id>/add_like/<int:msg_id>', methods=['POST'])
+def remove_like(msg_id, user_id):
+    """remove like from users likes"""
+
+    like = Likes.query.filter(Likes.user_id==g.user.id, Likes.message_id==msg_id).first()
+
+    db.session.delete(like)
+    db.session.commit()
+
+    return redirect(f'/user/{user_id}/likes')
+
+
+@app.route('/user/<int:user_id>/likes')
+def show_likes(user_id):
+    """show users liked messages"""
+
+    user = User.query.get_or_404(user_id)
+    messages = (user.likes)
+
+    return render_template('users/likes.html', messages=messages, user=user)
+
 @app.route('/users/<int:user_id>')
 def users_show(user_id):
     """Show user profile."""
@@ -222,12 +259,13 @@ def profile():
     form = UserEditForm()
 
     if form.validate_on_submit():
-        g.user.username = form.get(username.data, g.user.username)
-        g.user.email = form.get(email.data, g.user.email)
-        g.user.image_url = form.get(image_url.data, g.user.image_url)
-        g.user.header_image_url = form.get(header_image_url.data, g.user.header_image_url)
-        g.user.bio = form.get(bio.data, g.user.bio)
-        g.user.location = form.get(location.data, g.user.location)
+        
+        g.user.username = form.username.data if form.username.data != '' else g.user.username
+        g.user.email = form.email.data if form.email.data != '' else g.user.email
+        g.user.image_url = form.image_url.data if form.image_url.data != '' else g.user.image_url
+        g.user.header_image_url = form.header_image_url.data if form.header_image_url.data != '' else g.user.header_image_url
+        g.user.bio = form.bio.data if form.bio.data != '' else g.user.bio
+        g.user.location = form.location.data if form.location.data != '' else g.user.location
 
         db.session.commit()
 
@@ -293,7 +331,12 @@ def messages_show(message_id):
 def messages_destroy(message_id):
     """Delete a message."""
 
+    msg = Message.query.get(message_id)
+
     if not g.user:
+        flash("Access unauthorized.", "danger")
+        return redirect("/")
+    elif msg.user_id != g.user.id:
         flash("Access unauthorized.", "danger")
         return redirect("/")
 
@@ -315,15 +358,16 @@ def homepage():
     - anon users: no messages
     - logged in: 100 most recent messages of followed_users
     """
-
     if g.user:
+        following = [user.id for user in g.user.following]
         messages = (Message
                     .query
+                    .filter(Message.user_id.in_(following))
                     .order_by(Message.timestamp.desc())
                     .limit(100)
                     .all())
-
-        return render_template('home.html', messages=messages)
+        likes = g.user.likes
+        return render_template('home.html', messages=messages, likes=likes)
 
     else:
         return render_template('home-anon.html')

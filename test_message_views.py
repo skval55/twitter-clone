@@ -50,9 +50,23 @@ class MessageViewTestCase(TestCase):
                                     image_url=None)
 
         db.session.commit()
+        self.testuser2 = User.signup(username="testuser2",
+                                    email="test2@test.com",
+                                    password="testuser2",
+                                    image_url=None)
 
-    def test_add_message(self):
-        """Can use add a message?"""
+        db.session.commit()
+
+        msg = Message(text="test message",
+                                    user_id = self.testuser.id)
+        
+        db.session.add(msg)
+        db.session.commit()
+
+        self.testmsg = msg
+
+    def test_add_message_post(self):
+        """Can user add a message?"""
 
         # Since we need to change the session to mimic logging in,
         # we need to use the changing-session trick:
@@ -69,5 +83,99 @@ class MessageViewTestCase(TestCase):
             # Make sure it redirects
             self.assertEqual(resp.status_code, 302)
 
-            msg = Message.query.one()
-            self.assertEqual(msg.text, "Hello")
+            msg = Message.query.all()
+            self.assertEqual(msg[len(msg) - 1].text, "Hello")
+    
+    def test_add_message_get(self):
+        """user add message form"""
+
+        # Since we need to change the session to mimic logging in,
+        # we need to use the changing-session trick:
+
+        with self.client as c:
+            with c.session_transaction() as sess:
+                sess[CURR_USER_KEY] = self.testuser.id
+
+           
+            resp = c.get("/messages/new")
+            html = resp.get_data(as_text=True)
+
+            self.assertEqual(resp.status_code, 200)
+            self.assertIn('<textarea class="form-control" id="text" name="text"', html)
+   
+    def test_message_get(self):
+        """user add message form"""
+
+        # Since we need to change the session to mimic logging in,
+        # we need to use the changing-session trick:
+
+        with self.client as c:
+            with c.session_transaction() as sess:
+                sess[CURR_USER_KEY] = self.testuser.id
+
+           
+            resp = c.get(f"/messages/{self.testmsg.id}")
+            html = resp.get_data(as_text=True)
+
+            self.assertEqual(resp.status_code, 200)
+            self.assertIn('<p class="single-message">test message</p>', html)
+
+    def test_delete_message(self):
+        """test user delete"""
+
+        with self.client as c:
+            with c.session_transaction() as sess:
+                sess[CURR_USER_KEY] = self.testuser.id
+            
+            resp = c.post(f"/messages/{self.testmsg.id}/delete", follow_redirects=True)
+            html = resp.get_data(as_text=True)
+
+            self.assertEqual(resp.status_code, 200)
+            self.assertIn('<h4 id="sidebar-username">@testuser</h4>', html)
+
+    def test_add_message_logged_out(self):
+        """Can user add a message? logged out"""
+
+        # Since we need to change the session to mimic logging in,
+        # we need to use the changing-session trick:
+
+        with self.client as c:
+            with c.session_transaction() as sess:
+                sess[CURR_USER_KEY] = None
+
+            # Now, that session setting is saved, so we can have
+            # the rest of ours test
+
+            resp = c.get("/messages/new", follow_redirects=True)
+            html = resp.get_data(as_text=True)
+            # Make sure it redirects
+            self.assertEqual(resp.status_code, 200)
+            self.assertIn('<div class="alert alert-danger">Access unauthorized.</div>', html)
+          
+    def test_delete_message_logged_out(self):
+        """test user delete message logged out"""
+
+        with self.client as c:
+            with c.session_transaction() as sess:
+                sess[CURR_USER_KEY] = None
+            
+            resp = c.post(f"/messages/{self.testmsg.id}/delete", follow_redirects=True)
+
+
+            html = resp.get_data(as_text=True)
+            # Make sure it redirects
+            self.assertEqual(resp.status_code, 200)
+            self.assertIn('<div class="alert alert-danger">Access unauthorized.</div>', html)
+
+    def test_delete_message_wrong_user(self):
+        """test user delete another users message"""
+
+        with self.client as c:
+            with c.session_transaction() as sess:
+                sess[CURR_USER_KEY] = self.testuser2.id
+            
+            resp = c.post(f"/messages/{self.testmsg.id}/delete", follow_redirects=True)
+            html = resp.get_data(as_text=True)
+
+            self.assertEqual(resp.status_code, 200)
+            self.assertIn('<div class="alert alert-danger">Access unauthorized.</div>', html)

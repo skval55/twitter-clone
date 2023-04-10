@@ -55,8 +55,10 @@ body.error-404 {
 }
 
 .nav > li > a > img {
+  height: 32px;
   width: 32px;
   border-radius: 32px;
+  object-fit: cover;
 }
 
 ul.nav.navbar-nav {
@@ -540,4 +542,9 @@ p.card-bio {
 
 .message-404 .form-inline input {
   flex: 1;
+}
+
+
+img{
+  object-fit: cover;
 }
